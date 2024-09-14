@@ -1,0 +1,9 @@
+[Unit]
+Description=Update database of epweather    
+
+[Service]
+WorkingDirectory=/opt/data/epweather                                
+ExecStart=/opt/data/epweather/epw.sh -u
+
+[Install]
+WantedBy=multi-user.target

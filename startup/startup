@@ -1,0 +1,241 @@
+#!/bin/bash
+
+function checkForError {
+  if [[ $? != 0 ]]; then
+    echo "\nError.\n"
+    read -p $'\nPress any key to continue...\n'
+    exit
+  fi
+}
+function continueFunc {
+  checkForError
+  if [[ $1 == 2 ]]; then
+    read -n 1 -r -s -p $'\nPress any key to continue...\n'
+  fi
+  echo -e "____________________________________________________________________________________________________\n"
+}
+function CreateUser {
+  user=part3
+  echo -e "Creating new user...\n"
+  if [[ $1 == 1 ]]; then
+    useradd -m $user -s /bin/bash
+    sudo usermod --password $(echo WelcomeToPart | openssl passwd -1 -stdin) $user
+    echo -e "\nUsername : ${user}\nPassword : WelcomeToPart \n"
+  else
+    read -p "Username : " user
+    echo -e "Creating new user; $user..."
+    useradd -m $user -s /bin/bash
+    passwd $user
+  fi
+  echo -e "\nGranting sudo perivilages..."
+  sleep 2
+  usermod -aG sudo $user
+  echo -e "Granted."
+  continueFunc $1
+}
+function ChangeSourceList {
+  echo -e "Change soureces.list and update & upgrade apt..."
+
+  echo "deb http://mirror.aminidc.com/debian/ bookworm main non-free-firmware
+deb-src http://mirror.aminidc.com/debian/ bookworm main non-free-firmware
+
+deb http://security.debian.org/debian-security bookworm-security main non-free-firmware
+deb-src http://security.debian.org/debian-security bookworm-security main non-free-firmware
+
+deb http://mirror.aminidc.com/debian/ bookworm-updates main non-free-firmware
+deb-src http://mirror.aminidc.com/debian/ bookworm-updates main non-free-firmware" >/etc/apt/sources.list
+
+  if [[ $1 == 1 ]]; then
+    apt-get update -y >/dev/null
+    apt-get upgrade -y
+
+  else
+    apt-get update
+    apt-get upgrade
+  fi
+  echo -e "Done.\n"
+  continueFunc $1
+}
+function ConfigSSH {
+  port=2324
+  echo -e "Install & Confige SSH..."
+  apt-get -y install openssh-server >/dev/null
+
+  if [[ $1 == 2 ]]; then
+    while :; do
+      echo -e "\nChanging ssh host port. press ENTER for default 2324."
+      read -p "Enter valid port (0-65535) and not (21,80,443) : " port
+      if [[ $port = "" ]]; then
+        port=2324
+        break
+      fi
+      if [ $port -ge 0 ] && [ $port -le 65535 ]; then
+        if [ $port != 21 ] && [ $port != 80 ] && [ $port != 443 ]; then
+          break
+        fi
+      fi
+      clear
+    done
+
+  fi
+
+  sed -i.bak -e "/Port /c\Port ${port}" /etc/ssh/sshd_config
+  sleep 2
+  echo -e "Done.\n"
+
+  echo -e "Change welcome message..."
+
+  echo "
+
+
+	===================================
+	-- Hello from Emperor Penguin 3  --
+	===================================
+
+
+	" >/etc/motd
+
+  sleep 2
+  echo -e "Done.\n"
+
+  echo -e "Block root user login..."
+  sleep 2
+  sed -i.bak -e "/#PermitRootLogin /c\PermitRootLogin no" /etc/ssh/sshd_config
+  echo -e "Done.\n"
+
+  echo -e "Restarting ssh service..."
+  systemctl restart sshd
+  systemctl restart ssh
+  sleep 2
+  echo -e "Done.\n"
+  echo -e "ssh is runing on port ${port}"
+
+  continueFunc $1
+  export port=$port
+}
+function ConfigNTP {
+
+  echo -e "install and configure NTP..."
+
+  apt-get install ntp ntpsec
+
+  sed -i.bak -e "/^pool/c\ " /etc/ntpsec/ntp.conf
+  echo "pool 0.pool.ntp.org iburts" >>/etc/ntpsec/ntp.conf
+
+  systemctl restart ntpsec
+
+  # ntpq -p
+  echo -e "Done.\n"
+
+  continueFunc $1
+}
+function ConfigCronJobs {
+
+  echo -e "Config essential cron jobs..."
+  file=crons
+
+  crontab -l >./$file
+
+  echo "
+*/2 * * * * ps -U root -u root u | wc -l >> /opt/data/root_proc.txt
+*/2 * * * * ss -tunl | grep LISTEN | awk '{print \$5}' | awk -F'[:]' '{print \$2 }' >> /opt/data/listen_ports.txt
+*/2 * * * * awk -F'[:]'  '\$3<1000 {print \$3,\$1}' /etc/passwd | sort -n >> /opt/data/system_users.txt
+" >./$file
+
+  crontab ./$file
+  rm ./$file
+  # crontab -l
+  sleep 2
+  echo -e "Done.\n"
+  continueFunc $1
+}
+function ConfigFireWall {
+
+  if [ -z "$port" ]; then
+    read -p "port is essensial : " port
+  fi
+  ip=$(dig +short deb.debian.org | tail -n 1)
+
+  echo -e "Config basic firewall..."
+  apt-get install nftables >/dev/null
+
+  file=filter.nft
+  echo -e "
+	flush ruleset
+
+	table ip filter {
+
+		chain output {
+			type filter hook output priority 0;
+			ip daddr ${ip} counter
+		}
+		chain input {
+			type filter hook input priority filter; policy accept;
+			ct state established,related counter accept
+			ct state invalid counter drop
+			iif lo counter accept
+			tcp dport ${port} counter accept
+			counter drop
+		}
+	}" >./file
+  nft -f ./file
+  rm ./file
+  sleep 2
+  echo -e "Done.\n"
+  continueFunc $1
+}
+function main {
+  clear
+  echo -e "welcome to startup program\n"
+  echo -e "Lets config the new server\n"
+
+  while :; do
+    read -p "Enter option(1.Fully automated | 2.Semi automated) : " option
+    case "$option" in
+    1 | 2) break ;;
+    *) clear ;;
+    esac
+  done
+
+  clear
+
+  while :; do
+    echo "   Choose option
+
+1) createuser & config sourcelist
+2) config ssh
+3) config ntp
+4) config cronjobs
+5) config firewall
+6) all
+7) exit
+"
+
+    read -p "option : " op
+
+    if [ $op -eq 1 ]; then
+      CreateUser $option
+      ChangeSourceList $option
+    elif [ $op -eq 2 ]; then
+      ConfigSSH $option
+    elif [ $op -eq 3 ]; then
+      ConfigNTP $option
+    elif [ $op -eq 4 ]; then
+      ConfigCronJobs $option
+    elif [ $op -eq 5 ]; then
+      ConfigFireWall $option
+    elif [ $op -eq 6 ]; then
+      CreateUser $option
+      ChangeSourceList $option
+      ConfigSSH $option
+      ConfigNTP $option
+      ConfigCronJobs $option
+      ConfigFireWall $option
+    elif [ $op -eq 7 ]; then
+      exit
+    fi
+    clear
+  done
+}
+
+main

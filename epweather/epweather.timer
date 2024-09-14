@@ -1,0 +1,10 @@
+[Unit]
+Description="Description="Run epweather.service 10min after boot and every 10 minutes relative to activation time"
+
+[Timer]
+OnBootSec=1minutes
+OnUnitActiveSec=1minutes
+Unit=epweather.service
+
+[Install]
+WantedBy=multi-user.target
